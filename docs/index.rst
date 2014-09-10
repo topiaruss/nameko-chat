@@ -11,7 +11,9 @@ The only central component required is a `RabbitMQ <http://rabbitmq.com/>`_ brok
 Getting Started
 ---------------
 
-nameko-chat comprises a single `service` with three `entrypoints` and three `injections`. This tutorial will discuss each of the dependencies in turn, and then bring them all together in the service.
+nameko-chat comprises a single `service` with three `entrypoints` and three `injections`. This tutorial will discuss how these components interact to make a functioning nameko application.
+
+We'll discuss the process of running a nameko application (its `lifecycles`) and each of the entrypoints and injections (collectivly "dependencies") in turn, and then bring them all together in a service.
 
 .. sidebar:: Entrypoints & Injections
 
@@ -20,7 +22,7 @@ nameko-chat comprises a single `service` with three `entrypoints` and three `inj
     * Entrypoints are the hooks that trigger some work inside a service.
     * Injections are the mechanisms by which a service writes state.
 
-Before diving in to how the dependencies are implemented, let's consider what they do and how they're used together in the service.
+nameko-chat uses three entrypoints and three injections. Before we go any further let's briefly describe them.
 
 Entrypoints:
     * `stdin`: Reads lines from ``sys.stdin`` and calls a service method with each line.
@@ -40,7 +42,7 @@ Service and Worker Lifecycles
 
 It's important to understand the concept of `lifecycles` in nameko services before you start to write one. Let's step through the creation and use of an example service to explain this.
 
-The following is a very simple service that echoes anything written to ``stdin``::
+The following is a very simple service that echoes anything written to ``sys.stdin``::
 
     class Service(object):
 
@@ -102,7 +104,7 @@ While a service is being hosted, an entrypoint will "fire", triggering a method 
 
     * worker execution:
 
-        The ``@entrypoint`` decorated method on the service instance is executed. This may involve calls to injections on the service instance.
+        The entrypoint decorated method on the service instance is executed. This may involve calls to injections on the service instance.
 
     * worker result:
 
@@ -110,7 +112,7 @@ While a service is being hosted, an entrypoint will "fire", triggering a method 
 
     * worker teardown:
 
-        All dependencies are notified that a worker has completed its execution. This is used to remove any per-worker state in the dependeny prover.
+        All dependencies are notified that a worker has completed its execution. This is used to remove any per-worker state in the dependency provider.
 
     * destroy worker:
 
@@ -298,6 +300,8 @@ And then a tiny bit of logic in each entrypoint:
 
 .. literalinclude:: ../chat/service.py
    :lines: 59-69
+
+That's it! You've finished implementing nameko-chat.
 
 Indices and tables
 ==================
