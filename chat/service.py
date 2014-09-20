@@ -10,11 +10,10 @@ import logging
 from nameko.events import event_handler, event_dispatcher, Event, BROADCAST
 from nameko.runners import ServiceRunner
 
-
-from dependencies.stdin import stdin
 from dependencies.stdout import stdout
-from dependencies.once import once
 from dependencies.user import user
+from entrypoints.once import once
+from entrypoints.stdin import stdin
 
 
 class Message(Event):
