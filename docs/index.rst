@@ -11,25 +11,23 @@ The only central component required is a `RabbitMQ <http://rabbitmq.com/>`_ brok
 Getting Started
 ---------------
 
-nameko-chat comprises a single `service` with three `entrypoints` and three `injections`. This tutorial will discuss how these components interact to make a functioning nameko application.
+nameko-chat comprises a single `service` with three `entrypoints` and three `dependencies`. This tutorial will discuss how these components interact to make a functioning nameko application.
 
-We'll discuss the process of running a nameko application (its `lifecycles`) and each of the entrypoints and injections (collectivly "dependencies") in turn, and then bring them all together in a service.
+We'll discuss the process of running a nameko application (its `lifecycles`) and each of the entrypoints and dependencies in turn, and then bring them all together in a service.
 
-.. sidebar:: Entrypoints & Injections
-
-    Nameko is strongly orientated around Dependency Injection. Entrypoints and Injections are both types of dependencies.
+.. sidebar:: Definitions
 
     * Entrypoints are the hooks that trigger some work inside a service.
-    * Injections are the mechanisms by which a service writes state.
+    * Dependencies are used by services to communicate with external things.
 
-nameko-chat uses three entrypoints and three injections. Before we go any further let's briefly describe them.
+nameko-chat uses three entrypoints and three dependencies. Before we go any further let's briefly describe them.
 
 Entrypoints:
     * `stdin`: Reads lines from ``sys.stdin`` and calls a service method with each line.
     * `once`: Calls a service method exactly once, when the application starts.
     * `handle_event`: Calls a service method every time a certain event is received from the AMQP broker.
 
-Injections:
+Dependencies:
     * `stdout`: Allows the service to write to ``sys.stdout``
     * `user`: Stores the current user's name
     * `event_dispatcher`: Allows the service to dispatch events to other services.
@@ -43,6 +41,9 @@ Service and Worker Lifecycles
 It's important to understand the concept of `lifecycles` in nameko services before you start to write one. Let's step through the creation and use of an example service to explain this.
 
 The following is a very simple service that echoes anything written to ``sys.stdin``::
+
+    from dependencies.stdout import stdout
+    from entrypoints.stdin import stdin
 
     class Service(object):
 
@@ -72,7 +73,7 @@ The container has several states that correspond to the "service lifecycle":
         The :attr:`nameko.containers.ServiceContainer.dependencies` attribute of an initialised container hosting the service above would contain an instance of :class:`Stdout` and an instance of :class:`Stdin`::
 
             >>> container.dependencies
-            DependencySet([<dependencies.stdin.StdinProvider object at 0x1085efa90>, <depend
+            DependencySet([<entrypoints.stdin.StdinProvider object at 0x1085efa90>, <depend
             encies.stdout.StdoutProvider object at 0x1085efa50>])
 
     * prepare:
@@ -81,7 +82,7 @@ The container has several states that correspond to the "service lifecycle":
 
     * start:
 
-        :meth:`start` is called when a service starts being hosted. Dependency provider classes should implement a :meth:`start` `lifecycle method` to do anything required to start processing their external stimili.
+        :meth:`start` is called when a service starts being hosted. Dependency provider classes should implement a :meth:`start` `lifecycle method` to do anything required to start processing their external stimuli.
 
     * stop:
 
@@ -129,44 +130,46 @@ ___________________
 
 The `stdin` entrypoint reads from ``sys.stdin`` and passes each line to a service method. Example usage::
 
-  class Service(object):
+    from entrypoints.stdin import stdin
 
-    @stdin
-    def handle_stdin(self, line):
-        print line  # echo whatever was read from stdin
+    class Service(object):
+
+        @stdin
+        def handle_stdin(self, line):
+            print line  # echo whatever was read from stdin
 
 Here's the full implementation of the dependency:
 
-.. literalinclude:: ../chat/dependencies/stdin.py
+.. literalinclude:: ../chat/entrypoints/stdin.py
 
 Going through the methods on the provider class in a logical order:
 
-.. literalinclude:: ../chat/dependencies/stdin.py
+.. literalinclude:: ../chat/entrypoints/stdin.py
    :pyobject: StdinProvider.start
 
 :meth:`start` is one of the provider `lifecycle methods`. It is called on all of a service's dependencies when the container hosting that service starts. The :class:`StdinProvider` simply asks the container to spawn a managed thread to run its :meth:`_run` method.
 
-.. literalinclude:: ../chat/dependencies/stdin.py
+.. literalinclude:: ../chat/entrypoints/stdin.py
    :pyobject: StdinProvider.stop
 
 :meth:`stop` is also `lifecycle method`. All we do here is kill the greenthread we asked the container to spawn for us in :meth:`stop`.
 
-.. literalinclude:: ../chat/dependencies/stdin.py
+.. literalinclude:: ../chat/entrypoints/stdin.py
    :pyobject: StdinProvider.__init__
 
 Calls to ``sys.stdin`` are blocking, and therefore incompatible with eventlet. The :class:`eventlet.tpool.Proxy` class is a utility that wraps blocking calls so that you can wait on them in eventlet without stalling the event loop. We create the ``Proxy`` in :meth:`StdinProvider.__init__` and stash it for use later.
 
-.. literalinclude:: ../chat/dependencies/stdin.py
+.. literalinclude:: ../chat/entrypoints/stdin.py
    :pyobject: StdinProvider._run
 
-This is the workhorse method of the :class:`StdinProvider`, and implements the process of then entrypoint "firing" - receiving something from ``sys.stdin`` and spawning a new worker to handle it.
+This is the workhorse method of the :class:`StdinProvider`, and implements the process of the entrypoint "firing" - receiving something from ``sys.stdin`` and spawning a new worker to handle it.
 
-It perpetually waits for a line to be read from the `stdin` proxy, generates appropriate ``args`` and ``kwargs`` for its associated service method and finally creates asks the ``container`` to spawn a new worker to run it. Note that :meth:`StdinProvider._run` executes in a separate greenthread (spawned during :meth:`StdinProvider.start`).
+It perpetually waits for a line to be read from the `stdin` proxy, generates appropriate ``args`` and ``kwargs`` for its associated service method and finally asks the ``container`` to spawn a new worker to run it. Note that :meth:`StdinProvider._run` executes in a separate greenthread (spawned during :meth:`StdinProvider.start`).
 
 :meth:`nameko.containers.ServiceContainer.spawn_worker` will throw a :class:`nameko.exceptions.ContainerBeingKilled` exception if it is in the process of tearing down when the entrypoint fires. Some dependencies may take some action (e.g. rejecting a message) in this situation, but in this case there is nothing to do.
 
 
-.. literalinclude:: ../chat/dependencies/stdin.py
+.. literalinclude:: ../chat/entrypoints/stdin.py
    :pyobject: stdin
 
 Finally, we make a method that retuns a :class:`nameko.dependencies.DependencyFactory` for our provider class and decorate it with the :func:`nameko.dependencies.entrypoint` decorator, which registers it as an entrypoint dependency.
@@ -177,12 +180,15 @@ __________________
 
 The `once` entrypoint fires the decorated service method once, as soon as the service starts. Example usage::
 
-  class Service(object):
 
-    @once("matt")
-    @once("robot")
-    def say_hello(self, name):
-        print "hello ", name
+    from entrypoints.once import once
+
+    class Service(object):
+
+        @once("matt")
+        @once("robot")
+        def say_hello(self, name):
+            print "hello ", name
 
 
 The above snippet will print::
@@ -194,7 +200,7 @@ as soon as the service starts.
 
 The `once` entrypoint is the simplest entrypoint possible:
 
-.. literalinclude:: ../chat/dependencies/once.py
+.. literalinclude:: ../chat/entrypoints/once.py
 
 :meth:`OnceProvider.__init__` receives any arguments passed to the :class:`~nameko.dependencies.DependencyFactory`. During the :meth:`OnceProvider.start` lifecycle method, it spawns a worker to execute its associated method and passes the arguments along.
 
@@ -232,7 +238,7 @@ ___________________________
 
 
 The :func:`~nameko.events.event_handler` entrypoint is also built-in to nameko.
-Using normal `messaging paradigms <https://www.rabbitmq.com/getstarted.html>`_ a service can subsribe to events from other services (or itself) of a certain ``type``.
+Using normal `messaging paradigms <https://www.rabbitmq.com/getstarted.html>`_ a service can subscribe to events from other services (or itself) of a certain ``type``.
 
 
 Writing the Chat Service
@@ -247,6 +253,13 @@ The logic of the chat service is quite simple:
 
 
 Before we write any logic though, let's create a stub service that just includes the dependencies we've already discussed::
+
+    from nameko.events import event_dispatcher, event_handler
+
+    from dependencies.stdout import stdout
+    from dependencies.user import user
+    from entrypoints.once import once
+    from entrypoints.stdin imoprt stdin
 
     class Chat(object):
 
