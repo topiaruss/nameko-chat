@@ -15,6 +15,13 @@ from dependencies.user import user
 from entrypoints.once import once
 from entrypoints.stdin import stdin
 
+class IdentRequest(Event):
+    type = "ident"
+
+    def __init__(self, requestor):
+        self.data = {
+            requestor: requestor
+        }
 
 class Message(Event):
     type = "message"
@@ -31,6 +38,10 @@ class Chat(object):
     dispatch = event_dispatcher()
     stdout = stdout()
     user = user()
+
+    def send_ident(self):
+        event = IdentRequest(self.user.username)
+        self.dispatch(event)
 
     def send_message(self, msg):
         event = Message(self.user.username, msg)
@@ -53,9 +64,24 @@ class Chat(object):
                 'Welcome to chat, {}!\n'.format(self.user.username))
             self.prompt()
         else:
+            if 'ident' in line:
+                self.send_ident()
+                return
             self.send_message(line)
 
     @event_handler('chat', 'message',
+                   handler_type=BROADCAST, reliable_delivery=False)
+    def handle_message(self, event_data):
+        if not self.user.logged_in:
+            return
+
+        author = event_data.get('author')
+        msg = event_data.get('msg')
+        out = "\r{}: {}\n".format(author, msg)
+        self.stdout.write(out)
+        self.prompt()
+
+    @event_handler('chat', 'ident',
                    handler_type=BROADCAST, reliable_delivery=False)
     def handle_message(self, event_data):
         if not self.user.logged_in:
